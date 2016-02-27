@@ -23,14 +23,15 @@ function p2pSocket (socket, otherSocket) {
   })
 
   socket.on('offers', function (data) {
-    var offerObj = data.offers[0];
-    var emittedOffer = {
-        fromPeerId: socket.id,
-        offerId: offerObj.offerId,
-        offer: offerObj.offer
-    }
+    _.each(data.offers, offerObj => {
+        var emittedOffer = {
+            fromPeerId: socket.id,
+            offerId: offerObj.offerId,
+            offer: offerObj.offer
+        }
 
-    otherSocket.emit('offer', emittedOffer)
+        otherSocket.emit('offer', emittedOffer)
+    })
   })
 
   socket.on('peer-signal', function (data) {
