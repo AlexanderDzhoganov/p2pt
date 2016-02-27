@@ -63,6 +63,7 @@ function initp2p(token) {
                 var receiver = io.sockets.connected[recipientId]
 
                 if(!sender || !receiver) {
+                    reject()
                     return
                 }
 
@@ -125,8 +126,7 @@ io.on('connection', socket => {
             initp2p(token).then(function() {
                 socket.emit('set-token-ok', token)
             }).catch(err => {
-                console.error(err)
-                socket.disconnect()
+                socket.emit('set-token-invalid')
             })
         })
     })
