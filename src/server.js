@@ -3,6 +3,8 @@ import SocketIO from 'socket.io'
 import Redis from 'redis'
 import Crypto from 'crypto'
 
+import _ from 'lodash'
+
 var redisClient = Redis.createClient()
 redisClient.on('error', err => console.error(`Redis error: ${err}`))
 
@@ -13,72 +15,80 @@ server.listen(port, function () {
   console.log('P2PT listening on port ' + port)
 });
 
-var clients = {}
-
-function p2pSocket (socket, next, room) {
-  clients[socket.id] = socket
-
-  console.log('Client connected (id=' + socket.id + ', room=' + room + ').')
-
-  if (typeof room === 'object') {
-    var connectedClients = socket.adapter.rooms[room]
-  } else {
-    var connectedClients = clients
-  }
-  socket.emit('numClients', Object.keys(connectedClients).length - 1)
+function p2pSocket (socket, otherSocket) {
+  socket.emit('numClients', 1)
 
   socket.on('disconnect', function () {
-    delete clients[socket.id]
-    Object.keys(connectedClients).forEach(function (clientId, i) {
-      var client = clients[clientId]
-      client.emit('peer-disconnect', {peerId: socket.id})
-    })
-
-    console.log('Client gone (id=' + socket.id + ', room=' + room + ').')
+    otherSocket.emit('peer-disconnect', {peerId: socket.id})
   })
 
   socket.on('offers', function (data) {
-    // send offers to everyone in a given room
-    Object.keys(connectedClients).forEach(function (clientId, i) {
-      var client = clients[clientId]
-      if (client !== socket) {
-        var offerObj = data.offers[i]
-        var emittedOffer = {fromPeerId: socket.id, offerId: offerObj.offerId, offer: offerObj.offer}
-        console.log('Emitting offer: %s', JSON.stringify(emittedOffer))
-        client.emit('offer', emittedOffer)
-      }
-    })
+    var offerObj = data.offers[0];
+    var emittedOffer = {
+        fromPeerId: socket.id,
+        offerId: offerObj.offerId,
+        offer: offerObj.offer
+    }
+
+    otherSocket.emit('offer', emittedOffer)
   })
 
   socket.on('peer-signal', function (data) {
-    var toPeerId = data.toPeerId
-    if(!toPeerId.startsWith('/#')) {
-      toPeerId = '/#' + toPeerId
-    }
-
-    console.log('Signal peer id %s', toPeerId);
-    var client = clients[toPeerId]
-    client.emit('peer-signal', data)
+    otherSocket.emit('peer-signal', data)
   })
-  typeof next === 'function' && next()
 }
 
+var clients = {}
+var senders = {}
+var receivers = {}
 
-var io = SocketIO(server)
-io.on('connection', socket => {
-    socket.on('ask-token', () => {
-        console.log('ASK TOKEN')
+function initp2p(token) {
+    var senderId = senders[token]
+    var receiverId = receivers[token]
+
+    if(!senderId || !receiverId) {
+        return
+    }
+
+    var sender = clients[senderId]
+    var receiver = clients[receiverId]
+
+    if(!sender || !receiver) {
+        return
+    }
+
+    p2pSocket(sender, receiver)
+    p2pSocket(receiver, sender)
+}
+
+function generateToken() {
+    return new Promise((resolve, reject) => {
         Crypto.randomBytes(16, (err, buf) => {
             if (err) {
-                console.error(err)
-                socket.emit('error', 'failed to create token')
+                reject(err)
                 return
             }
 
-            var token = buf.toString('hex')
-            socket.join(token)
-            p2pSocket(socket, null, token)
+            resolve(buf.toString('hex'))
+        })
+    })
+}
+
+var io = SocketIO(server)
+io.on('connection', socket => {
+    clients[socket.id] = socket
+
+    socket.on('disconnect', function () {
+        delete clients[socket.id]
+    })
+
+    socket.on('ask-token', () => {
+        generateToken().then(token => {
+            senders[token] = socket.id
             socket.emit('set-token-ok', token)
+        }).catch(err => {
+            console.error(err)
+            socket.disconnect()
         })
     })
 
@@ -87,8 +97,8 @@ io.on('connection', socket => {
             return
         }
 
-        socket.join(token)
-        p2pSocket(socket, null, token)
+        receivers[token] = socket.id
+        initp2p(token)
         socket.emit('set-token-ok', token)
     })
 })
