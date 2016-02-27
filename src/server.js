@@ -132,6 +132,15 @@ io.use((socket, next) => {
 })
 
 io.on('connection', socket => {
+    redisClient.get('transfersTotal', (err, total) => {
+        if (err) {
+            console.error(err)
+            return
+        }
+
+        socket.emit('total-transfers', total)
+    })
+
     socket.on('ask-token', () => {
         doRateLimit(socket, () => {
             generateToken().then(token => {
@@ -148,6 +157,15 @@ io.on('connection', socket => {
                     })
 
                     socket.emit('set-token-ok', token)
+                    redisClient.incr('transfersTotal')
+                    redisClient.get('transfersTotal', (err, total) => {
+                        if (err) {
+                            console.error(err)
+                            return
+                        }
+
+                        io.emit('total-transfers', total)
+                    })
                 })
             }).catch(err => {
                 console.error(err)
