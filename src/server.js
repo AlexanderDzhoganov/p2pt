@@ -15,63 +15,99 @@ server.listen(port, function () {
   console.log('P2PT listening on port ' + port)
 });
 
+function doRateLimit(socket, next) {
+    var address = socket.handshake.address || 
+        socket.handshake.headers['x-forwarded-for']
+
+    redisClient.get('addr_' + address, (err, val) => {
+        if(val && val > 100) {
+            socket.disconnect()
+            return
+        }
+
+        redisClient.incr('addr_' + address)
+        if(!val) {
+            redisClient.expire('addr_' + address, 60)
+        }
+
+        next && next()
+    })
+}
+
 function p2pSocket (socket, otherSocket) {
   socket.on('disconnect', function () {
-    otherSocket.emit('peer-disconnect', {peerId: socket.id})
+    try {
+        otherSocket.emit('peer-disconnect', { peerId: socket.id })
+    } catch(err) {
+        console.error(err)
+    }
   })
 
   socket.on('offers', function (data) {
-    _.each(data.offers, offerObj => {
-        var emittedOffer = {
-            fromPeerId: socket.id,
-            offerId: offerObj.offerId,
-            offer: offerObj.offer
-        }
+    doRateLimit(socket, () => {
+        try {
+            _.each(data.offers, offerObj => {
+                var emittedOffer = {
+                    fromPeerId: socket.id,
+                    offerId: offerObj.offerId,
+                    offer: offerObj.offer
+                }
 
-        otherSocket.emit('offer', emittedOffer)
+                otherSocket.emit('offer', emittedOffer)
+            })
+        } catch(err) {
+            console.error(err)
+        }
     })
   })
 
   socket.on('peer-signal', function (data) {
-    if(data.toPeerId && !data.toPeerId.startsWith('/#')) {
-        data.toPeerId = '/#' + data.toPeerId
-    }
+    doRateLimit(socket, () => {
+        try {
+            if(data.toPeerId && !data.toPeerId.startsWith('/#')) {
+                data.toPeerId = '/#' + data.toPeerId
+            }
 
-    if(data.fromPeerId && !data.fromPeerId.startsWith('/#')) {
-        data.fromPeerId = '/#' + data.fromPeerId
-    }
+            if(data.fromPeerId && !data.fromPeerId.startsWith('/#')) {
+                data.fromPeerId = '/#' + data.fromPeerId
+            }
 
-    otherSocket.emit('peer-signal', data)
+            otherSocket.emit('peer-signal', data)
+        } catch(err) {
+            console.error(err)        
+        }
+    })
   })
 }
 
-function initp2p(token) {
+function getSocketIdByKey(key) {
     return new Promise((resolve, reject) => {
-        redisClient.get('sender_' + token, (err, senderId) => {
+        redisClient.get(key, (err, socketId) => {
             if(err) {
                 reject(err)
                 return
             }
 
-            redisClient.get('recp_' + token, (err, recipientId) => {
-                if (err) {
-                    reject(err)
-                    return
-                }
+            resolve(socketId)
+        })
+    })
+}
 
-                var sender = io.sockets.connected[senderId]
-                var receiver = io.sockets.connected[recipientId]
+function initp2p(token) {
+    return getSocketIdByKey('sender_' + token)
+    .then(function(senderId) {
+        return getSocketIdByKey('recp_' + token)
+        .then(function(recipientId) {
+            var sender = io.sockets.connected[senderId]
+            var receiver = io.sockets.connected[recipientId]
 
-                if(!sender || !receiver) {
-                    reject()
-                    return
-                }
+            if(!sender || !receiver) {
+                return Promise.reject()
+            }
 
-                sender.emit('numClients', 1)
-                p2pSocket(sender, receiver)
-                p2pSocket(receiver, sender)
-                resolve()
-            })
+            sender.emit('numClients', 1)
+            p2pSocket(sender, receiver)
+            p2pSocket(receiver, sender)
         })
     })
 }
@@ -90,43 +126,54 @@ function generateToken() {
 }
 
 var io = SocketIO(server)
+
+io.use((socket, next) => {
+    doRateLimit(socket, next)
+})
+
 io.on('connection', socket => {
     socket.on('ask-token', () => {
-        generateToken().then(token => {
-            redisClient.set('sender_' + token, socket.id, (err) => {
-                if (err) {
-                    console.error(err)
-                    return
-                }
+        doRateLimit(socket, () => {
+            generateToken().then(token => {
+                redisClient.set('sender_' + token, socket.id, (err) => {
+                    if (err) {
+                        socket.disconnect()
+                        console.error(err)
+                        return
+                    }
 
-                socket.on('disconnect', () => {
-                    redisClient.del('sender_' + token)
-                    redisClient.del('recp_' + token)
+                    socket.on('disconnect', () => {
+                        redisClient.del('sender_' + token)
+                        redisClient.del('recp_' + token)
+                    })
+
+                    socket.emit('set-token-ok', token)
                 })
-
-                socket.emit('set-token-ok', token)
+            }).catch(err => {
+                console.error(err)
+                socket.disconnect()
             })
-        }).catch(err => {
-            console.error(err)
-            socket.disconnect()
         })
     })
 
     socket.on('set-token', token => {
         if(!token) {
+            socket.disconnect()
             return
         }
 
-        redisClient.set('recp_' + token, socket.id, (err) => {
-            if(err) {
-                console.error(err)
-                return
-            }
+        doRateLimit(socket, () => {
+            redisClient.set('recp_' + token, socket.id, (err) => {
+                if(err) {
+                    console.error(err)
+                    return
+                }
 
-            initp2p(token).then(function() {
-                socket.emit('set-token-ok', token)
-            }).catch(err => {
-                socket.emit('set-token-invalid')
+                initp2p(token).then(function() {
+                    socket.emit('set-token-ok', token)
+                }).catch(err => {
+                    socket.emit('set-token-invalid')
+                })
             })
         })
     })
