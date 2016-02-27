@@ -38,27 +38,33 @@ function p2pSocket (socket, otherSocket) {
   })
 }
 
-var clients = {}
-var senders = {}
-var receivers = {}
-
 function initp2p(token) {
-    var senderId = senders[token]
-    var receiverId = receivers[token]
+    return new Promise((resolve, reject) => {
+        redisClient.get('sender_' + token, (err, senderId) => {
+            if(err) {
+                reject(err)
+                return
+            }
 
-    if(!senderId || !receiverId) {
-        return
-    }
+            redisClient.get('recp_' + token, (err, recipientId) => {
+                if (err) {
+                    reject(err)
+                    return
+                }
 
-    var sender = clients[senderId]
-    var receiver = clients[receiverId]
+                var sender = io.sockets.connected[senderId]
+                var receiver = io.sockets.connected[recipientId]
 
-    if(!sender || !receiver) {
-        return
-    }
+                if(!sender || !receiver) {
+                    return
+                }
 
-    p2pSocket(sender, receiver)
-    p2pSocket(receiver, sender)
+                p2pSocket(sender, receiver)
+                p2pSocket(receiver, sender)
+                resolve()
+            })
+        })
+    })
 }
 
 function generateToken() {
@@ -76,16 +82,21 @@ function generateToken() {
 
 var io = SocketIO(server)
 io.on('connection', socket => {
-    clients[socket.id] = socket
-
-    socket.on('disconnect', function () {
-        delete clients[socket.id]
-    })
-
     socket.on('ask-token', () => {
         generateToken().then(token => {
-            senders[token] = socket.id
-            socket.emit('set-token-ok', token)
+            redisClient.set('sender_' + token, socket.id, (err) => {
+                if (err) {
+                    console.error(err)
+                    return
+                }
+
+                socket.on('disconnect', () => {
+                    redisClient.del('sender_' + token)
+                    redisClient.del('recp_' + token)
+                })
+
+                socket.emit('set-token-ok', token)
+            })
         }).catch(err => {
             console.error(err)
             socket.disconnect()
@@ -97,8 +108,18 @@ io.on('connection', socket => {
             return
         }
 
-        receivers[token] = socket.id
-        initp2p(token)
-        socket.emit('set-token-ok', token)
+        redisClient.set('recp_' + token, socket.id, (err) => {
+            if(err) {
+                console.error(err)
+                return
+            }
+
+            initp2p(token).then(function() {
+                socket.emit('set-token-ok', token)
+            }).catch(err => {
+                console.error(err)
+                socket.disconnect()
+            })
+        })
     })
 })
