@@ -21,7 +21,7 @@ function p2pSocket (socket, next, room) {
   console.log('Client connected (id=' + socket.id + ', room=' + room + ').')
 
   if (typeof room === 'object') {
-    var connectedClients = socket.adapter.rooms[room.name]
+    var connectedClients = socket.adapter.rooms[room]
   } else {
     var connectedClients = clients
   }
@@ -67,6 +67,7 @@ function p2pSocket (socket, next, room) {
 var io = SocketIO(server)
 io.on('connection', socket => {
     socket.on('ask-token', () => {
+        console.log('ASK TOKEN')
         Crypto.randomBytes(16, (err, buf) => {
             if (err) {
                 console.error(err)
@@ -82,6 +83,10 @@ io.on('connection', socket => {
     })
 
     socket.on('set-token', token => {
+        if(!token) {
+            return
+        }
+
         socket.join(token)
         p2pSocket(socket, null, token)
         socket.emit('set-token-ok', token)
