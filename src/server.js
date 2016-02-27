@@ -16,8 +16,6 @@ server.listen(port, function () {
 });
 
 function p2pSocket (socket, otherSocket) {
-  socket.emit('numClients', 1)
-
   socket.on('disconnect', function () {
     otherSocket.emit('peer-disconnect', {peerId: socket.id})
   })
@@ -68,6 +66,7 @@ function initp2p(token) {
                     return
                 }
 
+                sender.emit('numClients', 1)
                 p2pSocket(sender, receiver)
                 p2pSocket(receiver, sender)
                 resolve()
