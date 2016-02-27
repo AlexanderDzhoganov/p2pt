@@ -35,8 +35,8 @@ function p2pSocket (socket, otherSocket) {
   })
 
   socket.on('peer-signal', function (data) {
-    if(!data.fromPeerId.startsWith('/#')) {
-        data.fromPeerId = '/#' + data.fromPeerId
+    if(!data.toPeerId.startsWith('/#')) {
+        data.toPeerId = '/#' + data.toPeerId
     }
 
     otherSocket.emit('peer-signal', data)
