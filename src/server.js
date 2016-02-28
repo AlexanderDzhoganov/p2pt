@@ -10,7 +10,7 @@ redisClient.on('error', err => console.error(`Redis error: ${err}`))
 
 var server = HTTP.createServer()
 
-var port = process.env.P2PT_PORT ? process.envt.P2PT_PORT : 3000
+var port = process.env.P2PT_PORT ? process.env.P2PT_PORT : 3000
 server.listen(port, function () {
   console.log('P2PT listening on port ' + port)
 });
