@@ -17,11 +17,15 @@ server.listen(port, function () {
 });
 
 function doRateLimit(socket, next) {
-    var address = socket.handshake.address || 
-        socket.handshake.headers['x-forwarded-for']
+    var address = socket.handshake.headers['x-forwarded-for']
+
+    if(!address) {
+        next && next()
+        return
+    }
 
     redisClient.get('addr_' + address, (err, val) => {
-        if(val && val > 64) {
+        if(val && val > 48) {
             socket.disconnect()
             return
         }
