@@ -158,6 +158,8 @@ io.on('connection', socket => {
                         return
                     }
 
+                    redisClient.expire('sender_' + token, 3600)
+
                     socket.on('disconnect', () => {
                         redisClient.del('sender_' + token)
                         redisClient.del('recp_' + token)
@@ -193,6 +195,8 @@ io.on('connection', socket => {
                     console.error(err)
                     return
                 }
+
+                redisClient.expire('recp_' + token, 3600)
 
                 initp2p(token).then(function() {
                     socket.emit('set-token-ok', token)
