@@ -25,7 +25,8 @@ function doRateLimit(socket, next) {
     }
 
     redisClient.get('addr_' + address, (err, val) => {
-        if(val && val > 48) {
+        if(val && val > 64) {
+            redisClient.expire('addr_' + address, 600)
             socket.disconnect()
             return
         }
