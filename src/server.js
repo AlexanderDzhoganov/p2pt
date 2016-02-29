@@ -7,6 +7,7 @@ import _ from 'lodash'
 
 var redisClient = Redis.createClient()
 redisClient.on('error', err => console.error(`Redis error: ${err}`))
+redisClient.setMaxListeners(0)
 
 var server = HTTP.createServer()
 
@@ -132,6 +133,8 @@ io.use((socket, next) => {
 })
 
 io.on('connection', socket => {
+    socket.setMaxListeners(32)
+
     redisClient.get('transfersTotal', (err, total) => {
         if (err) {
             console.error(err)
