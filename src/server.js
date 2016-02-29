@@ -138,7 +138,7 @@ io.use((socket, next) => {
 })
 
 io.on('connection', socket => {
-    socket.setMaxListeners(32)
+    socket.setMaxListeners(0)
 
     redisClient.get('transfersTotal', (err, total) => {
         if (err) {
