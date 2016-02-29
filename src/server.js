@@ -120,7 +120,7 @@ function initp2p(token) {
 
 function generateToken() {
     return new Promise((resolve, reject) => {
-        Crypto.randomBytes(16, (err, buf) => {
+        Crypto.randomBytes(8, (err, buf) => {
             if (err) {
                 reject(err)
                 return
