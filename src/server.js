@@ -21,7 +21,7 @@ function doRateLimit(socket, next) {
         socket.handshake.headers['x-forwarded-for']
 
     redisClient.get('addr_' + address, (err, val) => {
-        if(val && val > 100) {
+        if(val && val > 32) {
             socket.disconnect()
             return
         }
